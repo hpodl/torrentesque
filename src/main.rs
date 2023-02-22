@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::{self};
+use tokio::time;
 
 const PACKET_SIZE: usize = 2;
 
@@ -23,7 +23,7 @@ impl Client {
         self.data = data;
     }
 
-    async fn send(&mut self) -> std::io::Result<()> {
+    async fn send(&self) -> std::io::Result<()> {
         let mut stream = TcpStream::connect("localhost:4877").await?;
 
         for &byte in &self.data {

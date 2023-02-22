@@ -1,8 +1,10 @@
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{self};
+
+const PACKET_SIZE: usize = 2;
 
 pub struct Client {
     data: Vec<u8>,
@@ -12,7 +14,6 @@ impl Client {
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
-
 
     pub fn data(&self) -> &[u8] {
         self.data.as_ref()
@@ -34,16 +35,16 @@ impl Client {
     async fn listen(&mut self) -> std::io::Result<()> {
         let listener = TcpListener::bind("localhost:4877").await?;
 
+        let mut packet_buffer = [0u8; PACKET_SIZE];
+
         while let Ok((stream, _)) = listener.accept().await {
-            let buffered_stream = BufStream::new(stream);
-            
-            let mut lines = buffered_stream.lines();
-            while let Ok(maybe_line) = lines.next_line().await {
-                match maybe_line {
-                    Some(line) => println!("Read {}.", line),
-                    None => break,
-                }
+            let mut buffered_stream = BufStream::new(stream);
+
+            while let Ok(bytes_read) = buffered_stream.read_exact(&mut packet_buffer).await {
+                self.data.extend_from_slice(&packet_buffer[..bytes_read]);
             }
+
+            println!("Data now: {:?}", self.data);
         }
         Ok(())
     }
@@ -61,6 +62,7 @@ async fn main() -> std::io::Result<()> {
 
     time::sleep(Duration::from_millis(100)).await;
 
+    sender.send().await?;
     sender.send().await?;
 
     listener_handle.await??;

@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::ops::Deref;
+use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,9 +27,7 @@ impl Client {
     }
 
     pub async fn get_data(&self, from: usize, count: usize) -> Vec<u8> {
-        println!("GetData waiting for lock");
         let lock = self.data.lock().await;
-        println!("GetData got the lock");
 
         let data_copied = lock.deref().borrow()[from..from + count].to_vec();
         data_copied
@@ -54,18 +53,16 @@ impl Client {
         let mut packet_buffer = [0u8; PACKET_SIZE];
 
         while let Ok((stream, _)) = listener.accept().await {
+            println!("Lis");
             let mut buffered_stream = BufStream::new(stream);
 
             while let Ok(bytes_read) = buffered_stream.read_exact(&mut packet_buffer).await {
-                println!("Listener waiting for lock");
                 let lock = self.data.lock().await;
-                println!("Listener got the lock");
                 lock.deref()
                     .borrow_mut()
                     .extend_from_slice(&packet_buffer[..bytes_read]);
+                println!("Data now: {:?}", from_utf8(&lock.borrow()));
             }
-
-            println!("Data now: {:?}", self.data);
         }
         Ok(())
     }
@@ -114,8 +111,25 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
+    let third_addr = SocketAddr::from_str("127.0.0.52:2137").unwrap();
+    let mut third_client = Client::new(third_addr);
+    third_client.set_data("ZZZ.".as_bytes().to_owned()).await;
+    let client_ptr = Arc::new(third_client);
+
+    let sender_handle_3 = tokio::spawn({
+        let ptr_cloned = Arc::clone(&client_ptr);
+        async move {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            ptr_cloned.send(first_addr).await
+        }
+    });
+
     sender_handle_1.await??;
     sender_handle_2.await??;
+    sender_handle_3.await??;
+    time::sleep(Duration::from_millis(200)).await;
+
+    // returning there leaks a lot of memory by not shutting down listener threads
 
     Ok(())
 }

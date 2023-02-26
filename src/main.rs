@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio::time;
@@ -36,7 +36,7 @@ impl Client {
         *lock = data;
     }
 
-    pub async fn send(&self, to: SocketAddr) -> std::io::Result<()> {
+    pub async fn send(&self, to: SocketAddr) -> io::Result<()> {
         let mut stream = TcpStream::connect(to).await?;
 
         let packet = self.get_data(0, PACKET_SIZE).await;
@@ -45,7 +45,7 @@ impl Client {
         Ok(())
     }
 
-    async fn listen(&self) -> std::io::Result<()> {
+    async fn listen(&self) -> io::Result<()> {
         let listener = TcpListener::bind(self.address).await?;
 
         let mut packet_buffer = [0u8; PACKET_SIZE];

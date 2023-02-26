@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 use tokio::time;
 
 const PACKET_SIZE: usize = 2;
@@ -45,7 +45,17 @@ impl Client {
         Ok(())
     }
 
-    async fn listen(&self) -> io::Result<()> {
+    pub async fn listen(&self, mut shutdown_channel: oneshot::Receiver<()>) -> io::Result<()> {
+        tokio::select! {
+                err = self.do_listen() => err,
+                _ = &mut shutdown_channel => {
+                    println!("Shutting down");
+                    Ok(())
+            }
+        }
+    }
+
+    async fn do_listen(&self) -> io::Result<()> {
         let listener = TcpListener::bind(self.address).await?;
 
         let mut packet_buffer = [0u8; PACKET_SIZE];
@@ -79,10 +89,11 @@ async fn main() -> std::io::Result<()> {
 
     // First client setup
     let client_ptr = Arc::new(first_client);
+    let (wx1, rx1) = oneshot::channel::<()>();
 
-    let _listener_handle_1 = tokio::spawn({
+    let listener_handle_1 = tokio::spawn({
         let ptr_cloned = Arc::clone(&client_ptr);
-        async move { ptr_cloned.listen().await }
+        async move { ptr_cloned.listen(rx1).await }
     });
 
     let sender_handle_1 = tokio::spawn({
@@ -95,10 +106,11 @@ async fn main() -> std::io::Result<()> {
 
     // Second client setup
     let client_ptr = Arc::new(second_client);
+    let (wx2, rx2) = oneshot::channel::<()>();
 
-    let _listener_handle_2 = tokio::spawn({
+    let listener_handle_2 = tokio::spawn({
         let ptr_cloned = Arc::clone(&client_ptr);
-        async move { ptr_cloned.listen().await }
+        async move { ptr_cloned.listen(rx2).await }
     });
 
     let sender_handle_2 = tokio::spawn({
@@ -125,9 +137,13 @@ async fn main() -> std::io::Result<()> {
     sender_handle_1.await??;
     sender_handle_2.await??;
     sender_handle_3.await??;
-    time::sleep(Duration::from_millis(200)).await;
 
-    // returning there leaks a lot of memory by not shutting down listener threads
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    wx1.send(()).unwrap();
+    wx2.send(()).unwrap();
+
+    listener_handle_1.await??;
+    listener_handle_2.await??;
 
     Ok(())
 }

@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::ops::Deref;
 use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -8,34 +6,34 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::time;
 
 const PACKET_SIZE: usize = 2;
 
 pub struct Client {
-    data: Mutex<RefCell<Vec<u8>>>,
+    data: RwLock<Vec<u8>>,
     address: SocketAddr,
 }
 
 impl Client {
     pub fn new(address: SocketAddr) -> Self {
         Self {
-            data: Mutex::new(RefCell::new(Vec::new())),
+            data: RwLock::new(Vec::new()),
             address,
         }
     }
 
     pub async fn get_data(&self, from: usize, count: usize) -> Vec<u8> {
-        let lock = self.data.lock().await;
+        let lock = self.data.read().await;
 
-        let data_copied = lock.deref().borrow()[from..from + count].to_vec();
+        let data_copied = lock[from..from + count].to_vec();
         data_copied
     }
 
     pub async fn set_data(&mut self, data: Vec<u8>) {
         let lock = self.data.get_mut();
-        *lock.deref().borrow_mut() = data;
+        *lock = data;
     }
 
     pub async fn send(&self, to: SocketAddr) -> std::io::Result<()> {
@@ -57,11 +55,11 @@ impl Client {
             let mut buffered_stream = BufStream::new(stream);
 
             while let Ok(bytes_read) = buffered_stream.read_exact(&mut packet_buffer).await {
-                let lock = self.data.lock().await;
-                lock.deref()
-                    .borrow_mut()
-                    .extend_from_slice(&packet_buffer[..bytes_read]);
-                println!("Data now: {:?}", from_utf8(&lock.borrow()));
+                let mut lock = self.data.write().await;
+
+                lock.extend_from_slice(&packet_buffer[..bytes_read]);
+
+                println!("Data now: {:?}", from_utf8(&lock));
             }
         }
         Ok(())

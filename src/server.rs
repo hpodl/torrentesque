@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::str::FromStr;
 
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -26,7 +25,7 @@ impl Server {
         T: ToSocketAddrs,
     {
         let listener = TcpListener::bind(addr).await?;
-        while let Ok((mut stream, client_addr)) = listener.accept().await {
+        while let Ok((mut stream, _)) = listener.accept().await {
             let (reader, writer) = stream.split();
             let reader = BufReader::new(reader);
             let mut writer = BufWriter::new(writer);
@@ -41,7 +40,7 @@ impl Server {
                             RequestToTracker::GetPeers => {
                                 TrackerResponse::Peers(self.peerlist.clone())
                             }
-                            RequestToTracker::RegisterAsPeer => {
+                            RequestToTracker::RegisterAsPeer(client_addr) => {
                                 self.peerlist.push(client_addr);
                                 TrackerResponse::Ok
                             }

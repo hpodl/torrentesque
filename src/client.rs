@@ -5,10 +5,7 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
-use crate::requests::{RequestToTracker, TrackerResponse};
-use std::str;
-
-const PACKET_SIZE: usize = 2;
+use crate::requests::{LeechRequest, RequestToTracker, SeedResponse, TrackerResponse};
 
 pub struct Client {
     address: SocketAddr,
@@ -51,7 +48,7 @@ impl Client {
     pub async fn register_as_peer(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
-            .write(&serde_json::to_vec(&RequestToTracker::RegisterAsPeer).unwrap())
+            .write(&serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address)).unwrap())
             .await?;
         stream.write("\n".as_bytes()).await?;
         stream.flush().await?;
@@ -70,16 +67,29 @@ impl Client {
     }
 
     async fn do_listen(&self) -> io::Result<()> {
+        let data = "Message.".as_bytes();
         let listener = TcpListener::bind(self.address).await?;
-
         let mut packet_buffer = [0u8; 1024];
 
         while let Ok((stream, _)) = listener.accept().await {
-            println!("Client listening.");
             let mut buffered_stream = BufStream::new(stream);
 
             while let Ok(bytes_read) = buffered_stream.read(&mut packet_buffer).await {
-                println!("Read {:?}", str::from_utf8(&packet_buffer[..bytes_read]));
+                if bytes_read == 0 {
+                    break;
+                }
+                let response =
+                    match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
+                        Ok(LeechRequest::GetAvailability) => todo!(),
+                        Ok(LeechRequest::GetPackets(from, count)) => {
+                            SeedResponse::Packets(&data[from..from + count])
+                        }
+                        _ => SeedResponse::InvalidRequest,
+                    };
+                buffered_stream
+                    .write(&serde_json::to_vec(&response).unwrap())
+                    .await?;
+                println!("Responding with {:?}", response);
             }
         }
         Ok(())

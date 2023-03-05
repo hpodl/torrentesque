@@ -25,12 +25,12 @@ impl Server {
         self.peerlist.push(SocketAddr::from_str(addr).unwrap());
     }
 
-    pub async fn listen<T>(&mut self, addr: T) -> io::Result<()>
+    pub async fn listen<T>(&mut self, addr: &T) -> io::Result<()>
     where
         T: ToSocketAddrs,
     {
         let listener = TcpListener::bind(addr).await?;
-        while let Ok((mut stream, _)) = listener.accept().await {
+        while let Ok((mut stream, client_addr)) = listener.accept().await {
             let (reader, writer) = stream.split();
             let reader = BufReader::new(reader);
             let mut writer = BufWriter::new(writer);
@@ -44,6 +44,10 @@ impl Server {
                         match request {
                             RequestToTracker::GetPeers => {
                                 TrackerResponse::Peers(self.peerlist.clone())
+                            }
+                            RequestToTracker::RegisterAsPeer => {
+                                self.peerlist.push(client_addr);
+                                TrackerResponse::Ok
                             }
                         }
                     } else {

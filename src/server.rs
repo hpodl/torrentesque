@@ -21,10 +21,6 @@ impl Server {
         Self { peerlist: vec![] }
     }
 
-    pub fn push_peer(&mut self, addr: &str) {
-        self.peerlist.push(SocketAddr::from_str(addr).unwrap());
-    }
-
     pub async fn listen<T>(&mut self, addr: &T) -> io::Result<()>
     where
         T: ToSocketAddrs,

@@ -17,31 +17,40 @@ async fn main() -> std::io::Result<()> {
     let client2_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();
     let server_addr = SocketAddr::from_str("127.0.0.168:11256").unwrap();
 
+    let (tracker_wx, tracker_rx) = oneshot::channel::<()>();
     let mut server = Server::new();
-    let server_handle = tokio::spawn(async move { server.listen(&server_addr).await });
+    let server_handle = tokio::spawn(async move { server.listen(&server_addr, tracker_rx).await });
+
+    // Otherwise might not bind before the client attempts connecting to the server
     sleep(Duration::from_millis(250)).await;
 
+    let (seed_wx, seed_rx) = oneshot::channel::<()>();
+    let seed = Client::new(client_addr);
 
-    let mut client = Client::new(client_addr);
-    let leech_handle = tokio::spawn({
+    let seed_handle = tokio::spawn({
         async move {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            client.update_peerlist(&server_addr).await
+            seed.register_as_peer(&server_addr).await?;
+            seed.seed_loop(seed_rx).await
         }
     });
+    sleep(Duration::from_millis(250)).await;
 
-    let (wx, rx) = oneshot::channel::<()>();
-    let client2 = Client::new(client2_addr);
-    client2.register_as_peer(&server_addr).await?;
-    let seed_handle = tokio::spawn(async move { client2.listen(rx).await });
+    let (leech_wx, leech_rx) = oneshot::channel::<()>();
+    let leech = Client::new(client2_addr);
 
+    let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
+    sleep(Duration::from_millis(500)).await;
+    
+    seed_wx.send(()).unwrap();
+    tracker_wx.send(()).unwrap();
+    leech_wx.send(()).unwrap();
 
-    leech_handle.await??;
+    seed_handle.await??;
     server_handle.await??;
     
-    wx.send(()).unwrap();
-    seed_handle.await??;
+    leech_handle.await??;
 
     Ok(())
 }

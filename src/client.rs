@@ -41,7 +41,9 @@ impl Client {
     pub async fn register_as_peer(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
-            .write_all(&serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address)).unwrap())
+            .write_all(
+                &serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address)).unwrap(),
+            )
             .await?;
         stream.write_all("\n".as_bytes()).await?;
         stream.flush().await?;
@@ -84,7 +86,7 @@ impl Client {
                 buffered_stream
                     .write_all(&serde_json::to_vec(&response).unwrap())
                     .await?;
-                println!("Responding with {:?}", response);
+                buffered_stream.flush().await?;
             }
         }
         Ok(())
@@ -108,7 +110,7 @@ impl Client {
         let len = peerlist.len();
         assert!(len > 0);
 
-        // PRNG seed 
+        // PRNG seed
         let mut random = len;
 
         // PRNG closure (cryptographically insecure)
@@ -128,9 +130,7 @@ impl Client {
 
             let mut buf = [0u8; 1024];
             let bytes_read = stream.read(&mut buf).await?;
-            println!("Received: {:?}", &buf[..bytes_read]);
-
-
+            println!("Received {} bytes: {:?}", bytes_read, &buf[..bytes_read]);
         }
     }
 }

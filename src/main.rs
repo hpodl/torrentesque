@@ -35,21 +35,20 @@ async fn main() -> std::io::Result<()> {
         }
     });
     sleep(Duration::from_millis(250)).await;
-
+    
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
     let leech = Client::new(client2_addr);
-
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
-
-    sleep(Duration::from_millis(500)).await;
     
-    seed_wx.send(()).unwrap();
-    tracker_wx.send(()).unwrap();
+    sleep(Duration::from_millis(750)).await;
+    
     leech_wx.send(()).unwrap();
+    tracker_wx.send(()).unwrap();
+    seed_wx.send(()).unwrap();
 
     seed_handle.await??;
     server_handle.await??;
-    
+
     leech_handle.await??;
 
     Ok(())

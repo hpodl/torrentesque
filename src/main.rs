@@ -8,6 +8,7 @@ use tokio::sync::oneshot;
 use tokio::time::sleep;
 
 mod client;
+mod file_handler;
 mod requests;
 mod server;
 
@@ -35,13 +36,13 @@ async fn main() -> std::io::Result<()> {
         }
     });
     sleep(Duration::from_millis(250)).await;
-    
+
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
     let leech = Client::new(client2_addr);
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
-    
+
     sleep(Duration::from_millis(750)).await;
-    
+
     leech_wx.send(()).unwrap();
     tracker_wx.send(()).unwrap();
     seed_wx.send(()).unwrap();

@@ -1,0 +1,4 @@
+struct TorrentFile{
+    filename: String,
+    
+}

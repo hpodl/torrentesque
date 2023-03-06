@@ -1,10 +1,12 @@
-use std::fs::File;
-use std::io;
-use std::os::unix::prelude::FileExt;
+use std::cmp::min;
 use std::str;
 
 use bit_vec::BitVec;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use tokio::fs::{read_to_string, File, OpenOptions};
+use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
+
+use std::fs::File as StdFile;
 
 /// Handles the logic of dividing the file into packets, writing and reading them.
 pub struct FileHandler {
@@ -13,12 +15,12 @@ pub struct FileHandler {
     packet_size: usize,
     packet_count: usize,
     packet_availability: BitVec,
-    file: File,
+    file: StdFile,
 }
 
 impl FileHandler {
     pub fn new(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
-        let file = File::options()
+        let file = StdFile::options()
             .write(true)
             .read(true)
             .create(true)
@@ -45,34 +47,59 @@ impl FileHandler {
         })
     }
 
-    // pub fn from_existing(path: &str) -> io::Result<Self> {}
+    pub async fn save_progress(&self) -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(format!("{}.prog", self.path))
+            .await?;
 
-    pub fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
-        let mut buf = vec![0u8; count * self.packet_size];
-
-        let bytes_read = self
-            .file
-            .read_at(&mut buf, (start * self.packet_size) as u64)?;
-
-        Ok(buf[..bytes_read].to_owned())
+        file.write_all(
+            &serde_json::to_string(&self)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?
+                .as_bytes(),
+        )
+        .await
     }
 
-    pub fn write_packets(&mut self, start: usize, data: &[u8]) -> io::Result<usize> {
-        let bytes_written = self
-            .file
-            .write_at(data, (start * self.packet_size) as u64)?;
+    pub async fn from_existing(path: &str) -> io::Result<Self> {
+        let file_content = read_to_string(path).await?;
+        serde_json::from_str(&file_content)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+    }
+
+    pub async fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
+        // Makes the buffer smaller when the last packet is of size < `self.packet_size`
+        let bytes_to_read = min(
+            count * self.packet_size,
+            self.torrent_size - start * self.packet_size,
+        );
+        let mut buf = vec![0u8; bytes_to_read];
+
+        let mut reader = BufReader::new(File::from_std(self.file.try_clone()?));
+        reader
+            .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
+            .await?;
+        reader.read_exact(&mut buf).await?;
+
+        Ok(buf.to_owned())
+    }
+
+    pub async fn write_packets(&mut self, start: usize, data: &[u8]) -> io::Result<()> {
+        let mut file_handler = File::from_std(self.file.try_clone()?);
+        file_handler
+            .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
+            .await?;
+        file_handler.write_all(data).await?;
+        file_handler.flush().await?;
 
         // currently stable Rust offers no straightforward integer ceil division
-        let mut packets_written = bytes_written / self.packet_size;
-        if self.packet_size * packets_written < bytes_written {
-            packets_written += 1;
-        }
-
-        for i in start..(start + packets_written) {
+        for i in start..(start + data.len() / self.packet_size) {
             self.packet_availability.set(i, true);
         }
 
-        Ok(packets_written)
+        Ok(())
     }
 
     pub fn packet_count(&self) -> usize {
@@ -143,7 +170,7 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             .next_element()?
             .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
         Ok(FileHandler {
-            file: File::open("").unwrap(),
+            file: StdFile::open("").unwrap(),
             path,
             torrent_size,
             packet_size,
@@ -210,7 +237,7 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
         let packet_availability = packet_availability
             .ok_or_else(|| serde::de::Error::missing_field("packet_availability"))?;
 
-        let file = File::options()
+        let file = StdFile::options()
             .append(true)
             .read(true)
             .create(false)
@@ -233,82 +260,104 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
 mod tests {
     #![allow(non_snake_case)] // to allow structs' original case in test names
 
+    use std::io::Read;
+
     use super::*;
 
-    #[test]
-    fn FileHandler_new() {
+    #[tokio::test]
+    async fn FileHandler_new() {
         let filename = ".testfiles/test_file";
         let handler = FileHandler::new(filename, 10, 1);
         assert!(handler.is_ok());
         assert_eq!(handler.unwrap().packet_count, 10);
     }
 
-    #[test]
-    fn FileHandler_write_packets_get_packets() {
+    #[tokio::test]
+    async fn FileHandler_write_packets_get_packets() {
         let filename = ".testfiles/FileHandler_write_packets";
         let packet_size = 4; // 4 bytes
 
         let mut handler = FileHandler::new(filename, 10, packet_size).unwrap();
 
-        handler.write_packets(0, "ABCDabcd".as_bytes()).unwrap();
-        assert_eq!(handler.get_packets(0, 2).unwrap(), "ABCDabcd".as_bytes())
+        handler
+            .write_packets(0, "ABCDabcd".as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(
+            handler.get_packets(0, 2).await.unwrap(),
+            "ABCDabcd".as_bytes()
+        )
     }
 
-    #[test]
-    fn FileHandler_write_packets_actual_file() {
+    #[tokio::test]
+    async fn FileHandler_write_packets_actual_file() {
         let filename = ".testfiles/FileHandler_write_packets";
         let packet_size = 4; // 4 bytes
 
         let mut handler = FileHandler::new(filename, 10, packet_size).unwrap();
 
-        handler.write_packets(0, "ABCDabcd".as_bytes()).unwrap();
-        let file = File::open(filename).unwrap();
+        handler
+            .write_packets(0, "ABCDabcd".as_bytes())
+            .await
+            .unwrap();
+        let mut file = StdFile::options()
+            .read(true)
+            .write(false)
+            .truncate(false)
+            .open(filename)
+            .unwrap();
         let mut buf = [0u8; 8];
-        file.read_exact_at(&mut buf, 0).unwrap();
+        file.read_exact(&mut buf).unwrap();
 
         assert_eq!(buf, "ABCDabcd".as_bytes());
     }
 
-    #[test]
-    fn FileHandler_write_packets_non_divisible() {
+    #[tokio::test]
+    async fn FileHandler_write_packets_non_divisible() {
         let filename = ".testfiles/FileHandler_write_packets";
         let packet_size = 4; // 4 bytes
 
         let mut handler = FileHandler::new(filename, 10, packet_size).unwrap();
 
-        handler.write_packets(0, "ABCDabcd".as_bytes()).unwrap();
-        assert_eq!(handler.get_packets(0, 2).unwrap(), "ABCDabcd".as_bytes());
+        handler
+            .write_packets(0, "ABCDabcd".as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(
+            handler.get_packets(0, 2).await.unwrap(),
+            "ABCDabcd".as_bytes()
+        );
 
-        let file = File::open(filename).unwrap();
+        let mut file = StdFile::open(filename).unwrap();
         let mut buf = [0u8; 8];
-        file.read_exact_at(&mut buf, 0).unwrap();
+        file.read_exact(&mut buf).unwrap();
     }
 
-    #[test]
-    fn FileHandler_get_packet_availability() {
+    #[tokio::test]
+    async fn FileHandler_get_packet_availability() {
         let filename = ".testfiles/FileHandler_get_packet_availability";
         let mut handler = FileHandler::new(filename, 8, 1).unwrap();
 
         let mut vec = BitVec::from_bytes(&[0]);
         assert_eq!(handler.packet_availability(), vec);
 
-        handler.write_packets(0, "AA".as_bytes()).unwrap();
+        handler.write_packets(0, "AA".as_bytes()).await.unwrap();
         vec.set(0, true);
         vec.set(1, true);
         assert_eq!(handler.packet_availability(), vec);
     }
 
-    #[test]
-    fn FileHandler_serde() {
+    #[tokio::test]
+    async fn FileHandler_serde() {
         let content = "ABCDabcd".as_bytes();
         let filename = ".testfiles/FileHandler_serde";
         let mut handler = FileHandler::new(filename, 8, 1).unwrap();
-        handler.write_packets(0, content).unwrap();
+        handler.write_packets(0, content).await.unwrap();
 
         let serialized = serde_json::to_string(&handler).unwrap();
         println!("\n{:#?}\n", serialized);
         let deserialized: FileHandler = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(deserialized.get_packets(0, 8).unwrap(), content)
+        assert_eq!(deserialized.get_packets(0, 8).await.unwrap(), content)
     }
 }

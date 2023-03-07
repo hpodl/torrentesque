@@ -52,7 +52,7 @@ impl TorrentFile {
             torrent_size,
             packet_size,
             packet_count,
-            packet_availability: packet_availability,
+            packet_availability,
             file,
         })
     }
@@ -80,7 +80,7 @@ impl TorrentFile {
     }
 
     pub fn from_complete(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
-        let mut file = StdFile::options().append(true).open(path)?;
+        let mut file = StdFile::options().read(true).append(true).open(path)?;
         file.seek(io::SeekFrom::Start(0))?;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);
@@ -121,11 +121,12 @@ impl TorrentFile {
             .await?;
         file_handler.write_all(data).await?;
         file_handler.flush().await?;
-
+        
         for i in start..(start + div_usize_ceil(data.len(), self.packet_size)) {
             self.packet_availability.set(i, true);
         }
-
+        
+        file_handler.flush().await?;
         Ok(())
     }
 

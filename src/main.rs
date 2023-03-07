@@ -15,6 +15,10 @@ mod torrent_file;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let torrent_size = 10usize;
+    let packet_size = 2usize;
+
+
     let client_addr = SocketAddr::from_str("127.0.0.166:5468").unwrap();
     let client2_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();
     let server_addr = SocketAddr::from_str("127.0.0.168:11256").unwrap();
@@ -27,7 +31,7 @@ async fn main() -> std::io::Result<()> {
     sleep(Duration::from_millis(250)).await;
 
     let (seed_wx, seed_rx) = oneshot::channel::<()>();
-    let seed = Client::new(client_addr, TorrentFile::new("a", 1, 1).unwrap());
+    let seed = Client::new(client_addr, TorrentFile::from_complete(".testfiles/mainfile1", torrent_size, packet_size).unwrap());
 
     let seed_handle = tokio::spawn({
         async move {
@@ -39,7 +43,7 @@ async fn main() -> std::io::Result<()> {
     sleep(Duration::from_millis(250)).await;
 
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
-    let leech = Client::new(client2_addr, TorrentFile::new("a", 1, 1).unwrap());
+    let mut leech = Client::new(client2_addr, TorrentFile::new(".testfiles/mainfile2", torrent_size, packet_size).unwrap());
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
     sleep(Duration::from_millis(750)).await;

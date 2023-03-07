@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use serde::__private::from_utf8_lossy;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
@@ -68,7 +69,6 @@ impl Client {
 
     /// Actual `seed_loop` body
     async fn do_seed_loop(&self) -> io::Result<()> {
-        let data = "Message.".as_bytes();
         let listener = TcpListener::bind(self.address).await?;
         let mut packet_buffer = [0u8; 1024];
 
@@ -98,7 +98,7 @@ impl Client {
 
     /// Launches the leech loop, which stops when a message is passed through `shutdown_channel`
     pub async fn leech_loop(
-        &self,
+        &mut self,
         tracker_addr: &SocketAddr,
         shutdown_channel: oneshot::Receiver<()>,
     ) -> io::Result<()> {
@@ -109,7 +109,7 @@ impl Client {
     }
 
     /// Actual `leech_loop` body
-    async fn do_leech_loop(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
+    async fn do_leech_loop(&mut self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let peerlist = self.request_peerlist(tracker_addr).await?;
         let len = peerlist.len();
         assert!(len > 0);
@@ -134,7 +134,10 @@ impl Client {
 
             let mut buf = [0u8; 1024];
             let bytes_read = stream.read(&mut buf).await?;
-            println!("Received {} bytes: {:?}", bytes_read, &buf[..bytes_read]);
+            if let Ok(SeedResponse::Packets(packets)) = serde_json::from_slice::<SeedResponse>(&buf[..bytes_read]) {
+                println!("Received packets: {}", from_utf8_lossy(&packets));
+                self.torrent_file.write_packets(0, &packets).await?;
+            }
         }
     }
 }

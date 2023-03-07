@@ -79,9 +79,10 @@ impl TorrentFile {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
     }
 
-    pub fn from_complete(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
+    pub fn from_complete(path: &str, packet_size: usize) -> io::Result<Self> {
         let mut file = StdFile::options().read(true).append(true).open(path)?;
         file.rewind()?;
+        let torrent_size = file.metadata().unwrap().len() as usize;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);
         let mut packet_availability = BitVec::new();
@@ -121,11 +122,11 @@ impl TorrentFile {
             .await?;
         file_handler.write_all(data).await?;
         file_handler.flush().await?;
-        
+
         for i in start..(start + div_usize_ceil(data.len(), self.packet_size)) {
             self.packet_availability.set(i, true);
         }
-        
+
         file_handler.flush().await?;
         Ok(())
     }
@@ -313,6 +314,14 @@ mod tests {
         let handler = TorrentFile::new(filename, 10, 1);
         assert!(handler.is_ok());
         assert_eq!(handler.unwrap().packet_count, 10);
+    }
+
+    #[tokio::test]
+    async fn FileHandler_last_packet_not_whole() {
+        let filename = ".testfiles/test_file";
+        let handler = TorrentFile::new(filename, 10, 4).unwrap();
+        assert_eq!(handler.packet_count, 3);
+        assert_eq!(handler.packet_availability().len(), 3);
     }
 
     #[tokio::test]

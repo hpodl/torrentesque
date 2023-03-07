@@ -82,9 +82,9 @@ impl Client {
                 let response =
                     match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
                         Ok(LeechRequest::GetAvailability) => todo!(),
-                        Ok(LeechRequest::GetPackets(start, count)) => {
-                            SeedResponse::Packets(self.torrent_file.get_packets(start, count).await?)
-                        }
+                        Ok(LeechRequest::GetPackets(start, count)) => SeedResponse::Packets(
+                            self.torrent_file.get_packets(start, count).await?,
+                        ),
                         _ => SeedResponse::InvalidRequest,
                     };
                 buffered_stream
@@ -125,19 +125,27 @@ impl Client {
             random
         };
 
-        loop {
+        let mut buf = [0u8; 1024];
+        for (i, is_available) in self.torrent_file.packet_availability().iter().enumerate() {
+            if is_available {
+                continue;
+            }
+
             let peer_addr = peerlist[gen_usize() % len];
             let mut stream = TcpStream::connect(peer_addr).await?;
             stream
-                .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(0, 4))?)
+                .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(i, 1))?)
                 .await?;
 
-            let mut buf = [0u8; 1024];
             let bytes_read = stream.read(&mut buf).await?;
-            if let Ok(SeedResponse::Packets(packets)) = serde_json::from_slice::<SeedResponse>(&buf[..bytes_read]) {
+            let response = serde_json::from_slice::<SeedResponse>(&buf[..bytes_read])
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+
+            if let SeedResponse::Packets(packets) = response {
                 println!("Received packets: {}", from_utf8_lossy(&packets));
-                self.torrent_file.write_packets(0, &packets).await?;
+                self.torrent_file.write_packets(i, &packets).await?;
             }
         }
+        Ok(())
     }
 }

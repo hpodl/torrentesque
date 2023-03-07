@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use client::Client;
 use server::Server;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 use torrent_file::TorrentFile;
@@ -15,9 +17,19 @@ mod torrent_file;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let torrent_size = 10usize;
-    let packet_size = 2usize;
+    let torrent_content = "Hello, I am a file.";
+    let packet_size = 4usize;
+    let torrent_size = torrent_content.len();
 
+    {
+        let mut completed_torrent_file = OpenOptions::new()
+            .write(true)
+            .open(".testfiles/mainfile1")
+            .await?;
+        completed_torrent_file
+            .write_all(torrent_content.as_bytes())
+            .await?;
+    }
 
     let client_addr = SocketAddr::from_str("127.0.0.166:5468").unwrap();
     let client2_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();
@@ -31,7 +43,10 @@ async fn main() -> std::io::Result<()> {
     sleep(Duration::from_millis(250)).await;
 
     let (seed_wx, seed_rx) = oneshot::channel::<()>();
-    let seed = Client::new(client_addr, TorrentFile::from_complete(".testfiles/mainfile1", torrent_size, packet_size).unwrap());
+    let seed = Client::new(
+        client_addr,
+        TorrentFile::from_complete(".testfiles/mainfile1", packet_size).unwrap(),
+    );
 
     let seed_handle = tokio::spawn({
         async move {
@@ -43,18 +58,20 @@ async fn main() -> std::io::Result<()> {
     sleep(Duration::from_millis(50)).await;
 
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
-    let mut leech = Client::new(client2_addr, TorrentFile::new(".testfiles/mainfile2", torrent_size, packet_size).unwrap());
+    let mut leech = Client::new(
+        client2_addr,
+        TorrentFile::new(".testfiles/mainfile2", torrent_size, packet_size).unwrap(),
+    );
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
     sleep(Duration::from_millis(125)).await;
 
-    leech_wx.send(()).unwrap();
+    // let _ = leech_wx.send(());
     tracker_wx.send(()).unwrap();
     seed_wx.send(()).unwrap();
 
     seed_handle.await??;
     server_handle.await??;
-
     leech_handle.await??;
 
     Ok(())

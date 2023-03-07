@@ -19,11 +19,11 @@ pub struct TorrentFile {
 }
 
 /// Returns ceil(a/b)
-/// 
+///
 /// Currently stable Rust offers no straightforward integer ceil division
 fn div_usize_ceil(a: usize, b: usize) -> usize {
     let floor = a / b;
-    if floor*b < a {
+    if floor * b < a {
         floor + 1
     } else {
         floor
@@ -72,10 +72,27 @@ impl TorrentFile {
         .await
     }
 
-    pub async fn from_existing(path: &str) -> io::Result<Self> {
+    pub async fn from_progress_file(path: &str) -> io::Result<Self> {
         let file_content = read_to_string(path).await?;
         serde_json::from_str(&file_content)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+    }
+
+    pub fn from_complete(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
+        let file = StdFile::options().append(true).open(path)?;
+
+        let packet_count = div_usize_ceil(torrent_size, packet_size);
+        let mut packet_availability = BitVec::new();
+        packet_availability.grow(packet_count, true);
+
+        Ok(Self {
+            path: path.to_owned(),
+            torrent_size,
+            packet_size,
+            packet_count,
+            packet_availability,
+            file,
+        })
     }
 
     pub async fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
@@ -268,9 +285,9 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
 mod tests {
     #![allow(non_snake_case)] // to allow structs' original case in test names
 
-    use std::io::Read;
     use super::*;
-    
+    use std::io::Read;
+
     #[test]
     fn div_usize_ceil_same_as_floor() {
         assert_eq!(div_usize_ceil(40, 20), 2);

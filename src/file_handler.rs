@@ -18,6 +18,18 @@ pub struct FileHandler {
     file: StdFile,
 }
 
+/// Returns ceil(a/b)
+/// 
+/// Currently stable Rust offers no straightforward integer ceil division
+fn div_usize_ceil(a: usize, b: usize) -> usize {
+    let floor = a / b;
+    if floor*b < a {
+        floor + 1
+    } else {
+        floor
+    }
+}
+
 impl FileHandler {
     pub fn new(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
         let file = StdFile::options()
@@ -28,10 +40,7 @@ impl FileHandler {
             .open(path)?;
 
         // currently stable Rust offers no straightforward integer ceil division
-        let mut packet_count = torrent_size / packet_size;
-        if packet_size * packet_count < torrent_size {
-            packet_count += 1;
-        }
+        let packet_count = div_usize_ceil(torrent_size, packet_size);
 
         let path = path.to_owned();
         let mut packet_availability = BitVec::new();
@@ -94,8 +103,7 @@ impl FileHandler {
         file_handler.write_all(data).await?;
         file_handler.flush().await?;
 
-        // currently stable Rust offers no straightforward integer ceil division
-        for i in start..(start + data.len() / self.packet_size) {
+        for i in start..(start + div_usize_ceil(data.len(), self.packet_size)) {
             self.packet_availability.set(i, true);
         }
 
@@ -261,8 +269,23 @@ mod tests {
     #![allow(non_snake_case)] // to allow structs' original case in test names
 
     use std::io::Read;
-
     use super::*;
+    
+    #[test]
+    fn div_usize_ceil_same_as_floor() {
+        assert_eq!(div_usize_ceil(40, 20), 2);
+        assert_eq!(div_usize_ceil(134, 20), 7);
+        assert_eq!(div_usize_ceil(1, 1), 1);
+        assert_eq!(div_usize_ceil(21, 1), 21);
+    }
+
+    #[test]
+    fn div_usize_ceil_rounds_up() {
+        assert_eq!(div_usize_ceil(40, 21), 2);
+        assert_eq!(div_usize_ceil(40, 19), 3);
+        assert_eq!(div_usize_ceil(17, 2), 9);
+        assert_eq!(div_usize_ceil(13, 3), 5);
+    }
 
     #[tokio::test]
     async fn FileHandler_new() {

@@ -142,7 +142,7 @@ impl Client {
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
 
             if let SeedResponse::Packets(packets) = response {
-                println!("Received packets: {}", from_utf8_lossy(&packets));
+                println!("Received {}B from: {}", packets.len(), peer_addr);
                 self.torrent_file.write_packets(i, &packets).await?;
             }
         }

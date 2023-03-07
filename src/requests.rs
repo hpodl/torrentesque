@@ -21,7 +21,7 @@ pub enum LeechRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SeedResponse<'a> {
-    Packets(&'a [u8]),
+pub enum SeedResponse {
+    Packets(Vec<u8>),
     InvalidRequest,
 }

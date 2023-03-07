@@ -82,8 +82,8 @@ impl Client {
                 let response =
                     match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
                         Ok(LeechRequest::GetAvailability) => todo!(),
-                        Ok(LeechRequest::GetPackets(from, count)) => {
-                            SeedResponse::Packets(&data[from..from + count])
+                        Ok(LeechRequest::GetPackets(start, count)) => {
+                            SeedResponse::Packets(self.torrent_file.get_packets(start, count).await?)
                         }
                         _ => SeedResponse::InvalidRequest,
                     };

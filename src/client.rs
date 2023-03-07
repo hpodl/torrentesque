@@ -5,14 +5,18 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
 use crate::requests::{LeechRequest, RequestToTracker, SeedResponse, TrackerResponse};
-
+use crate::torrent_file::TorrentFile;
 pub struct Client {
     address: SocketAddr,
+    torrent_file: TorrentFile,
 }
 
 impl Client {
-    pub fn new(address: SocketAddr) -> Self {
-        Self { address }
+    pub fn new(address: SocketAddr, torrent_file: TorrentFile) -> Self {
+        Self {
+            address,
+            torrent_file,
+        }
     }
     pub async fn request_peerlist(&self, tracker_addr: &SocketAddr) -> io::Result<Vec<SocketAddr>> {
         let mut stream = TcpStream::connect(tracker_addr).await?;

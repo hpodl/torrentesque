@@ -178,7 +178,7 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             .next_element()?
             .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
         Ok(FileHandler {
-            file: StdFile::open("").unwrap(),
+            file: StdFile::open(&path).unwrap(),
             path,
             torrent_size,
             packet_size,

@@ -35,18 +35,18 @@ async fn main() -> std::io::Result<()> {
 
     let seed_handle = tokio::spawn({
         async move {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
             seed.register_as_peer(&server_addr).await?;
             seed.seed_loop(seed_rx).await
         }
     });
-    sleep(Duration::from_millis(250)).await;
+    sleep(Duration::from_millis(50)).await;
 
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
     let mut leech = Client::new(client2_addr, TorrentFile::new(".testfiles/mainfile2", torrent_size, packet_size).unwrap());
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
-    sleep(Duration::from_millis(750)).await;
+    sleep(Duration::from_millis(125)).await;
 
     leech_wx.send(()).unwrap();
     tracker_wx.send(()).unwrap();

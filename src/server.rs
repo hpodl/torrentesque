@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tokio::io::BufWriter;
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::net::ToSocketAddrs;
@@ -35,9 +34,8 @@ impl Server {
         T: ToSocketAddrs, {
             let listener = TcpListener::bind(addr).await?;
             while let Ok((mut stream, _)) = listener.accept().await {
-                let (reader, writer) = stream.split();
+                let (reader, mut writer) = stream.split();
                 let reader = BufReader::new(reader);
-                let mut writer = BufWriter::new(writer);
     
                 let mut lines = reader.lines();
     
@@ -60,7 +58,6 @@ impl Server {
                     };
     
                     writer.write_all(&serde_json::to_vec(&response)?).await?;
-                    writer.flush().await?;
                 }
             }
             Ok(())

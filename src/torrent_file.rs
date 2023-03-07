@@ -66,7 +66,7 @@ impl TorrentFile {
             .await?;
 
         file.write_all(
-            &serde_json::to_string(&self)
+            serde_json::to_string(&self)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?
                 .as_bytes(),
         )
@@ -81,7 +81,7 @@ impl TorrentFile {
 
     pub fn from_complete(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
         let mut file = StdFile::options().read(true).append(true).open(path)?;
-        file.seek(io::SeekFrom::Start(0))?;
+        file.rewind()?;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);
         let mut packet_availability = BitVec::new();

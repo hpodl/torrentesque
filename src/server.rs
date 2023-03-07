@@ -28,8 +28,8 @@ impl Server {
         T: ToSocketAddrs,
     {
         select! {
-            res = shutdown_channel => {Ok(res.unwrap())},
-            res = self.do_listen(addr) => {res},
+            res = shutdown_channel => { res.map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string())) },
+            res = self.do_listen(addr) => { res },
         }
     }
 

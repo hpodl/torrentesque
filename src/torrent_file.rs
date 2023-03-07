@@ -5,7 +5,7 @@ use std::str;
 use bit_vec::BitVec;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 use tokio::fs::{read_to_string, File, OpenOptions};
-use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
+use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use std::fs::File as StdFile;
 
@@ -105,7 +105,7 @@ impl TorrentFile {
         );
         let mut buf = vec![0u8; bytes_to_read];
 
-        let mut reader = BufReader::new(File::from_std(self.file.try_clone()?));
+        let mut reader = File::from_std(self.file.try_clone()?);
         reader
             .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
             .await?;

@@ -19,7 +19,11 @@ impl Server {
         Self { peerlist: vec![] }
     }
 
-    pub async fn listen<T>(&mut self, addr: &T, shutdown_channel: oneshot::Receiver<()>) -> io::Result<()>
+    pub async fn listen<T>(
+        &mut self,
+        addr: &T,
+        shutdown_channel: oneshot::Receiver<()>,
+    ) -> io::Result<()>
     where
         T: ToSocketAddrs,
     {
@@ -31,35 +35,32 @@ impl Server {
 
     pub async fn do_listen<T>(&mut self, addr: &T) -> io::Result<()>
     where
-        T: ToSocketAddrs, {
-            let listener = TcpListener::bind(addr).await?;
-            while let Ok((mut stream, _)) = listener.accept().await {
-                let (reader, mut writer) = stream.split();
-                let reader = BufReader::new(reader);
-    
-                let mut lines = reader.lines();
-    
-                while let Ok(Some(line)) = lines.next_line().await {
-                    println!("{:?}", line);
-                    let response = {
-                        if let Ok(request) = serde_json::from_str::<RequestToTracker>(&line) {
-                            match request {
-                                RequestToTracker::GetPeers => {
-                                    TrackerResponse::Peers(self.peerlist.clone())
-                                }
-                                RequestToTracker::RegisterAsPeer(client_addr) => {
-                                    self.peerlist.push(client_addr);
-                                    TrackerResponse::Ok
-                                }
-                            }
-                        } else {
-                            TrackerResponse::InvalidRequest
+        T: ToSocketAddrs,
+    {
+        let listener = TcpListener::bind(addr).await?;
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let (reader, mut writer) = stream.split();
+            let reader = BufReader::new(reader);
+
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let response = {
+                    match serde_json::from_str::<RequestToTracker>(&line) {
+                        Ok(RequestToTracker::GetPeers) => {
+                            TrackerResponse::Peers(self.peerlist.clone())
                         }
-                    };
-    
-                    writer.write_all(&serde_json::to_vec(&response)?).await?;
-                }
+                        Ok(RequestToTracker::RegisterAsPeer(client_addr)) => {
+                            self.peerlist.push(client_addr);
+                            TrackerResponse::Ok
+                        }
+
+                        _ => TrackerResponse::InvalidRequest,
+                    }
+                };
+
+                writer.write_all(&serde_json::to_vec(&response)?).await?;
             }
-            Ok(())
         }
+        Ok(())
+    }
 }

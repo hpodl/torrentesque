@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::io::Seek;
 use std::str;
 
 use bit_vec::BitVec;
@@ -79,7 +80,8 @@ impl TorrentFile {
     }
 
     pub fn from_complete(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
-        let file = StdFile::options().append(true).open(path)?;
+        let mut file = StdFile::options().append(true).open(path)?;
+        file.seek(io::SeekFrom::Start(0))?;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);
         let mut packet_availability = BitVec::new();
@@ -331,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn FileHandler_write_packets_actual_file() {
-        let filename = ".testfiles/FileHandler_write_packets";
+        let filename = ".testfiles/FileHandler_write_packets_file";
         let packet_size = 4; // 4 bytes
 
         let mut handler = TorrentFile::new(filename, 10, packet_size).unwrap();
@@ -354,7 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn FileHandler_write_packets_non_divisible() {
-        let filename = ".testfiles/FileHandler_write_packets";
+        let filename = ".testfiles/FileHandler_write_packets_nondiv";
         let packet_size = 4; // 4 bytes
 
         let mut handler = TorrentFile::new(filename, 10, packet_size).unwrap();

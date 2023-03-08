@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 
-use serde::__private::from_utf8_lossy;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;

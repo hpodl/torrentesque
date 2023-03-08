@@ -17,19 +17,14 @@ mod torrent_file;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let torrent_content = "Hello, I am a file.";
-    let packet_size = 4usize;
-    let torrent_size = torrent_content.len();
-
-    {
-        let mut completed_torrent_file = OpenOptions::new()
-            .write(true)
+    let packet_size = 64usize;
+    let torrent_size = {
+        let complete_torrent_file = OpenOptions::new()
+            .read(true)
             .open(".testfiles/mainfile1")
             .await?;
-        completed_torrent_file
-            .write_all(torrent_content.as_bytes())
-            .await?;
-    }
+        complete_torrent_file.metadata().await.unwrap().len() as usize
+    };
 
     let client_addr = SocketAddr::from_str("127.0.0.166:5468").unwrap();
     let client2_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();

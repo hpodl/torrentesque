@@ -78,17 +78,20 @@ impl Client {
                 if bytes_read == 0 {
                     break;
                 }
-                let response =
-                    match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
-                        Ok(LeechRequest::GetAvailability) => todo!(),
-                        Ok(LeechRequest::GetPackets(start, count)) => SeedResponse::Packets(
-                            self.torrent_file.get_packets(start, count).await?,
-                        ),
-                        _ => SeedResponse::InvalidRequest,
-                    };
-                buffered_stream
-                    .write_all(&serde_json::to_vec(&response).unwrap())
-                    .await?;
+
+                match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
+                    Ok(LeechRequest::GetAvailability) => todo!(),
+                    Ok(LeechRequest::GetPackets(start, count)) => {
+                        let data = self.torrent_file.get_packets(start, count).await?;
+                        buffered_stream.write_all(&data).await?;
+                    }
+                    _ => {
+                        buffered_stream
+                            .write_all(&serde_json::to_vec(&SeedResponse::InvalidRequest).unwrap())
+                            .await?;
+                    }
+                };
+
                 buffered_stream.flush().await?;
             }
         }
@@ -134,7 +137,7 @@ impl Client {
                 seed
             }
         };
-        let mut buf = [0u8; 1024];
+        let mut buf = vec![0u8; self.torrent_file.packet_size()];
         for (i, is_available) in self.torrent_file.packet_availability().iter().enumerate() {
             if is_available {
                 continue;
@@ -147,13 +150,10 @@ impl Client {
                 .await?;
 
             let bytes_read = stream.read(&mut buf).await?;
-            let response = serde_json::from_slice::<SeedResponse>(&buf[..bytes_read])
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+            println!("Got {} bytes", bytes_read);
 
-            if let SeedResponse::Packets(packets) = response {
-                println!("Received {}B from: {}", packets.len(), peer_addr);
-                self.torrent_file.write_packets(i, &packets).await?;
-            }
+            self.torrent_file.write_packets(i, &buf[..bytes_read]).await?;
+
         }
         Ok(())
     }

@@ -16,11 +16,11 @@ mod torrent_file;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let packet_size = 64usize;
+    let packet_size = 1025;
     let torrent_size = {
         let complete_torrent_file = OpenOptions::new()
             .read(true)
-            .open(".testfiles/mainfile1")
+            .open(".testfiles/sent.png")
             .await?;
         complete_torrent_file.metadata().await.unwrap().len() as usize
     };
@@ -39,7 +39,7 @@ async fn main() -> std::io::Result<()> {
     let (seed_wx, seed_rx) = oneshot::channel::<()>();
     let seed = Client::new(
         client_addr,
-        TorrentFile::from_complete(".testfiles/mainfile1", packet_size).unwrap(),
+        TorrentFile::from_complete(".testfiles/sent.png", packet_size).unwrap(),
     );
 
     let seed_handle = tokio::spawn({
@@ -54,19 +54,20 @@ async fn main() -> std::io::Result<()> {
     let (leech_wx, leech_rx) = oneshot::channel::<()>();
     let mut leech = Client::new(
         client2_addr,
-        TorrentFile::new(".testfiles/mainfile2", torrent_size, packet_size).unwrap(),
+        TorrentFile::new(".testfiles/received.png", torrent_size, packet_size).unwrap(),
     );
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
     sleep(Duration::from_millis(125)).await;
 
     // let _ = leech_wx.send(());
+    leech_handle.await??;
+
     tracker_wx.send(()).unwrap();
     seed_wx.send(()).unwrap();
 
     seed_handle.await??;
     server_handle.await??;
-    leech_handle.await??;
 
     Ok(())
 }

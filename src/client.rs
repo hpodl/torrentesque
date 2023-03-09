@@ -116,15 +116,15 @@ impl Client {
     async fn do_leech_loop(&mut self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let peerlist = {
             let mut peerlist = vec![];
-            while peerlist.len() < 1 {
+            while peerlist.is_empty() {
                 time::sleep(Duration::from_millis(50)).await;
                 peerlist = self.request_peerlist(tracker_addr).await?;
             }
             peerlist
         };
 
-        let len = peerlist.len();
-        let mut seed = len;
+        let peer_count = peerlist.len();
+        let mut seed = peer_count;
 
         // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
         // Code taken `https://github.com/rust-lang/rust/blob/6a179026decb823e6ad8ba1c81729528bc5d695f/library/core/src/slice/sort.rs#L677`
@@ -151,7 +151,7 @@ impl Client {
                 continue;
             }
 
-            let peer_addr = peerlist[gen_usize() % len];
+            let peer_addr = peerlist[gen_usize() % peer_count];
             let mut stream = TcpStream::connect(peer_addr).await?;
             stream
                 .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(i, 1))?)

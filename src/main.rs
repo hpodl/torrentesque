@@ -5,7 +5,6 @@ use std::time::Duration;
 use client::Client;
 use server::Server;
 use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 use torrent_file::TorrentFile;

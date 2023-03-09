@@ -113,17 +113,27 @@ impl Client {
         let len = peerlist.len();
         assert!(len > 0);
 
-        // PRNG seed
-        let mut random = len;
+        let mut seed = len;
 
-        // PRNG closure (cryptographically insecure)
+        // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
+        // Code taken `https://github.com/rust-lang/rust/blob/6a179026decb823e6ad8ba1c81729528bc5d695f/library/core/src/slice/sort.rs#L677`
         let mut gen_usize = || {
-            random ^= random << 13;
-            random ^= random >> 17;
-            random ^= random << 5;
-            random
+            if usize::BITS <= 32 {
+                let mut r = seed as u32;
+                r ^= r << 13;
+                r ^= r >> 17;
+                r ^= r << 5;
+                seed = r as usize;
+                seed
+            } else {
+                let mut r = seed as u64;
+                r ^= r << 13;
+                r ^= r >> 7;
+                r ^= r << 17;
+                seed = r as usize;
+                seed
+            }
         };
-
         let mut buf = [0u8; 1024];
         for (i, is_available) in self.torrent_file.packet_availability().iter().enumerate() {
             if is_available {

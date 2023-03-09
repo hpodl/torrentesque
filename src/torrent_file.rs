@@ -138,6 +138,10 @@ impl TorrentFile {
     pub fn packet_availability(&self) -> BitVec {
         self.packet_availability.clone()
     }
+
+    pub fn packet_size(&self) -> usize {
+        self.packet_size
+    }
 }
 
 impl Serialize for TorrentFile {

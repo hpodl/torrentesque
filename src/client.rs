@@ -1,8 +1,10 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
+use tokio::time;
 
 use crate::requests::{LeechRequest, RequestToTracker, SeedResponse, TrackerResponse};
 use crate::torrent_file::TorrentFile;
@@ -112,10 +114,16 @@ impl Client {
 
     /// Actual `leech_loop` body
     async fn do_leech_loop(&mut self, tracker_addr: &SocketAddr) -> io::Result<()> {
-        let peerlist = self.request_peerlist(tracker_addr).await?;
-        let len = peerlist.len();
-        assert!(len > 0);
+        let peerlist = {
+            let mut peerlist = vec![];
+            while peerlist.len() < 1 {
+                time::sleep(Duration::from_millis(50)).await;
+                peerlist = self.request_peerlist(tracker_addr).await?;
+            }
+            peerlist
+        };
 
+        let len = peerlist.len();
         let mut seed = len;
 
         // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
@@ -150,10 +158,11 @@ impl Client {
                 .await?;
 
             let bytes_read = stream.read(&mut buf).await?;
-            println!("Got {} bytes", bytes_read);
+            println!("Got {} bytes from {}", bytes_read, peer_addr);
 
-            self.torrent_file.write_packets(i, &buf[..bytes_read]).await?;
-
+            self.torrent_file
+                .write_packets(i, &buf[..bytes_read])
+                .await?;
         }
         Ok(())
     }

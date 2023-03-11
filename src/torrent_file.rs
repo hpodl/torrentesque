@@ -1,11 +1,13 @@
 use std::cmp::min;
 use std::io::Seek;
+use std::ops::Deref;
 use std::str;
 
 use bit_vec::BitVec;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 use tokio::fs::{read_to_string, File, OpenOptions};
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::RwLock;
 
 use std::fs::File as StdFile;
 
@@ -15,7 +17,7 @@ pub struct TorrentFile {
     torrent_size: usize,
     packet_size: usize,
     packet_count: usize,
-    packet_availability: BitVec,
+    packet_availability: RwLock<BitVec>,
     file: StdFile,
 }
 
@@ -46,6 +48,7 @@ impl TorrentFile {
         let path = path.to_owned();
         let mut packet_availability = BitVec::new();
         packet_availability.grow(packet_count, false);
+        let packet_availability = RwLock::new(packet_availability);
 
         Ok(Self {
             path,
@@ -87,6 +90,7 @@ impl TorrentFile {
         let packet_count = div_usize_ceil(torrent_size, packet_size);
         let mut packet_availability = BitVec::new();
         packet_availability.grow(packet_count, true);
+        let packet_availability = RwLock::new(packet_availability);
 
         Ok(Self {
             path: path.to_owned(),
@@ -115,7 +119,7 @@ impl TorrentFile {
         Ok(buf.to_owned())
     }
 
-    pub async fn write_packets(&mut self, start: usize, data: &[u8]) -> io::Result<()> {
+    pub async fn write_packets(&self, start: usize, data: &[u8]) -> io::Result<()> {
         let mut file_handler = File::from_std(self.file.try_clone()?);
         file_handler
             .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
@@ -123,8 +127,9 @@ impl TorrentFile {
         file_handler.write_all(data).await?;
         file_handler.flush().await?;
 
+        let mut availability_lock = self.packet_availability.write().await;
         for i in start..(start + div_usize_ceil(data.len(), self.packet_size)) {
-            self.packet_availability.set(i, true);
+            availability_lock.set(i, true);
         }
 
         file_handler.flush().await?;
@@ -135,8 +140,8 @@ impl TorrentFile {
         self.packet_count
     }
 
-    pub fn packet_availability(&self) -> BitVec {
-        self.packet_availability.clone()
+    pub async fn packet_availability(&self) -> BitVec {
+        self.packet_availability.read().await.clone()
     }
 
     pub fn packet_size(&self) -> usize {
@@ -154,7 +159,10 @@ impl Serialize for TorrentFile {
         state.serialize_field("torrent_size", &self.torrent_size)?;
         state.serialize_field("packet_size", &self.packet_size)?;
         state.serialize_field("packet_count", &self.packet_count)?;
-        state.serialize_field("packet_availability", &self.packet_availability)?;
+        state.serialize_field(
+            "packet_availability",
+            &self.packet_availability.try_read().unwrap().deref(),
+        )?;
         state.end()
     }
 }
@@ -199,9 +207,10 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
         let packet_count = seq
             .next_element()?
             .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
-        let packet_availability = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
+        let packet_availability = RwLock::new(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?,
+        );
         Ok(TorrentFile {
             file: StdFile::open(&path).unwrap(),
             path,
@@ -252,7 +261,7 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
                     if packet_availability.is_some() {
                         return Err(serde::de::Error::duplicate_field("packet_availability"));
                     }
-                    packet_availability = Some(map.next_value()?);
+                    packet_availability = Some(RwLock::new(map.next_value()?));
                 }
                 _ => {
                     let _ = map.next_value::<serde::de::IgnoredAny>()?;
@@ -325,7 +334,7 @@ mod tests {
         let filename = ".testfiles/test_file";
         let handler = TorrentFile::new(filename, 10, 4).unwrap();
         assert_eq!(handler.packet_count, 3);
-        assert_eq!(handler.packet_availability().len(), 3);
+        assert_eq!(handler.packet_availability().await.len(), 3);
     }
 
     #[tokio::test]
@@ -333,7 +342,7 @@ mod tests {
         let filename = ".testfiles/FileHandler_write_packets";
         let packet_size = 4; // 4 bytes
 
-        let mut handler = TorrentFile::new(filename, 10, packet_size).unwrap();
+        let handler = TorrentFile::new(filename, 10, packet_size).unwrap();
 
         handler
             .write_packets(0, "ABCDabcd".as_bytes())
@@ -350,7 +359,7 @@ mod tests {
         let filename = ".testfiles/FileHandler_write_packets_file";
         let packet_size = 4; // 4 bytes
 
-        let mut handler = TorrentFile::new(filename, 10, packet_size).unwrap();
+        let handler = TorrentFile::new(filename, 10, packet_size).unwrap();
 
         handler
             .write_packets(0, "ABCDabcd".as_bytes())
@@ -373,7 +382,7 @@ mod tests {
         let filename = ".testfiles/FileHandler_write_packets_nondiv";
         let packet_size = 4; // 4 bytes
 
-        let mut handler = TorrentFile::new(filename, 10, packet_size).unwrap();
+        let handler = TorrentFile::new(filename, 10, packet_size).unwrap();
 
         handler
             .write_packets(0, "ABCDabcd".as_bytes())
@@ -392,22 +401,22 @@ mod tests {
     #[tokio::test]
     async fn FileHandler_get_packet_availability() {
         let filename = ".testfiles/FileHandler_get_packet_availability";
-        let mut handler = TorrentFile::new(filename, 8, 1).unwrap();
+        let handler = TorrentFile::new(filename, 8, 1).unwrap();
 
         let mut vec = BitVec::from_bytes(&[0]);
-        assert_eq!(handler.packet_availability(), vec);
+        assert_eq!(handler.packet_availability().await, vec);
 
         handler.write_packets(0, "AA".as_bytes()).await.unwrap();
         vec.set(0, true);
         vec.set(1, true);
-        assert_eq!(handler.packet_availability(), vec);
+        assert_eq!(handler.packet_availability().await, vec);
     }
 
     #[tokio::test]
     async fn FileHandler_serde() {
         let content = "ABCDabcd".as_bytes();
         let filename = ".testfiles/FileHandler_serde";
-        let mut handler = TorrentFile::new(filename, 8, 1).unwrap();
+        let handler = TorrentFile::new(filename, 8, 1).unwrap();
         handler.write_packets(0, content).await.unwrap();
 
         let serialized = serde_json::to_string(&handler).unwrap();

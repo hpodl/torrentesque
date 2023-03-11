@@ -102,7 +102,7 @@ impl Client {
 
     /// Launches the leech loop, which stops when a message is passed through `shutdown_channel`
     pub async fn leech_loop(
-        &mut self,
+        &self,
         tracker_addr: &SocketAddr,
         shutdown_channel: oneshot::Receiver<()>,
     ) -> io::Result<()> {
@@ -113,7 +113,7 @@ impl Client {
     }
 
     /// Actual `leech_loop` body
-    async fn do_leech_loop(&mut self, tracker_addr: &SocketAddr) -> io::Result<()> {
+    async fn do_leech_loop(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let peerlist = {
             let mut peerlist = vec![];
             while peerlist.is_empty() {
@@ -146,7 +146,13 @@ impl Client {
             }
         };
         let mut buf = vec![0u8; self.torrent_file.packet_size()];
-        for (i, is_available) in self.torrent_file.packet_availability().iter().enumerate() {
+        for (i, is_available) in self
+            .torrent_file
+            .packet_availability()
+            .await
+            .iter()
+            .enumerate()
+        {
             if is_available {
                 continue;
             }

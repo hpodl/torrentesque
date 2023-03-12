@@ -82,7 +82,13 @@ impl Client {
                 }
 
                 match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
-                    Ok(LeechRequest::GetAvailability) => todo!(),
+                    Ok(LeechRequest::GetAvailability) => {
+                        buffered_stream
+                            .write_all(&serde_json::to_vec(&SeedResponse::Availability(
+                                self.torrent_file.packet_availability().await,
+                            ))?)
+                            .await?;
+                    }
                     Ok(LeechRequest::GetPackets(start, count)) => {
                         let data = self.torrent_file.get_packets(start, count).await?;
                         buffered_stream.write_all(&data).await?;
@@ -157,14 +163,33 @@ impl Client {
                 continue;
             }
 
-            let peer_addr = peerlist[gen_usize() % peer_count];
-            let mut stream = TcpStream::connect(peer_addr).await?;
+            let mut stream: TcpStream = loop {
+                let peer_addr = peerlist[gen_usize() % peer_count];
+                let mut stream = TcpStream::connect(peer_addr).await?;
+
+                let seed_response = {
+                    let mut availability_buf = vec![0u8; 256];
+                    stream
+                        .write_all(&serde_json::to_vec(&LeechRequest::GetAvailability)?)
+                        .await?;
+                    let bytes_read = stream.read(&mut availability_buf).await?;
+                    serde_json::from_slice::<SeedResponse>(&availability_buf[..bytes_read])
+                }?;
+
+                if let SeedResponse::Availability(availability) = seed_response {
+                    match availability.get(i) {
+                        Some { 0: true } => { break stream },
+                        _ => continue,
+                    }
+                }
+            };
+
             stream
                 .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(i, 1))?)
                 .await?;
 
             let bytes_read = stream.read(&mut buf).await?;
-            println!("Got {} bytes from {}", bytes_read, peer_addr);
+            println!("Got {} bytes from {}", bytes_read, stream.peer_addr()?);
 
             self.torrent_file
                 .write_packets(i, &buf[..bytes_read])

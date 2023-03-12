@@ -1,3 +1,4 @@
+use bit_vec::BitVec;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -23,4 +24,5 @@ pub enum LeechRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SeedResponse {
     InvalidRequest,
+    Availability(BitVec),
 }

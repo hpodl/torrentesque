@@ -178,7 +178,7 @@ impl Client {
 
                 if let SeedResponse::Availability(availability) = seed_response {
                     match availability.get(i) {
-                        Some { 0: true } => { break stream },
+                        Some { 0: true } => break stream,
                         _ => continue,
                     }
                 }
@@ -189,7 +189,12 @@ impl Client {
                 .await?;
 
             let bytes_read = stream.read(&mut buf).await?;
-            println!("Got {} bytes from {}", bytes_read, stream.peer_addr()?);
+            println!(
+                "[{}]: Got {} bytes from {}",
+                self.address,
+                bytes_read,
+                stream.peer_addr()?
+            );
 
             self.torrent_file
                 .write_packets(i, &buf[..bytes_read])

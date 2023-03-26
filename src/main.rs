@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use client::Client;
 use server::Server;
 use tokio::fs::OpenOptions;
 use tokio::sync::oneshot;
-use tokio::time::sleep;
+use tokio::time::{self, sleep};
 use torrent_file::TorrentFile;
 
 mod client;
@@ -25,10 +26,11 @@ async fn main() -> std::io::Result<()> {
         complete_torrent_file.metadata().await.unwrap().len() as usize
     };
 
-    let server_addr = SocketAddr::from_str("127.0.0.168:11256").unwrap();
-    let seed_addr_1 = SocketAddr::from_str("127.0.0.166:5468").unwrap();
-    let seed2_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();
-    let leech_addr = SocketAddr::from_str("127.0.0.167:7846").unwrap();
+    let server_addr = SocketAddr::from_str("127.0.0.168:1111").unwrap();
+    let seed1_addr = SocketAddr::from_str("127.0.0.166:2222").unwrap();
+    let seed2_addr = SocketAddr::from_str("127.0.0.167:3333").unwrap();
+    let leech_addr = SocketAddr::from_str("127.0.0.167:4444").unwrap();
+    let full_peer_addr = SocketAddr::from_str("127.0.0.167:5555").unwrap();
 
     let (tracker_wx, tracker_rx) = oneshot::channel::<()>();
     let mut server = Server::new();
@@ -40,7 +42,7 @@ async fn main() -> std::io::Result<()> {
     // First seed //
     let (seed_wx, seed_rx) = oneshot::channel::<()>();
     let seed = Client::new(
-        seed_addr_1,
+        seed1_addr,
         TorrentFile::from_complete(".testfiles/sent.png", packet_size).unwrap(),
     );
 
@@ -69,20 +71,45 @@ async fn main() -> std::io::Result<()> {
 
     sleep(Duration::from_millis(50)).await;
 
+    // Full peer (seed + leech) //
+    let (_f_leech_wx, f_leech_rx) = oneshot::channel::<()>(); // writer unused but not dropped
+    let leech2 = Client::new(
+        full_peer_addr,
+        TorrentFile::new(".testfiles/received2.png", torrent_size, packet_size).unwrap(),
+    );
+
+    let peer_arc = Arc::new(leech2);
+    let arc_copy = Arc::clone(&peer_arc);
+    let f_peer_leech_handle =
+        tokio::spawn(async move { arc_copy.leech_loop(&server_addr, f_leech_rx).await });
+
+    let arc_copy = Arc::clone(&peer_arc);
+    let (fseed_wx, fseed_rx) = oneshot::channel::<()>(); // writer unused but not dropped
+    let f_peer_seed_handle = tokio::spawn(async move {
+        arc_copy.register_as_peer(&server_addr).await?;
+        arc_copy.seed_loop(fseed_rx).await
+    });
+
+    // Let's give the leech+seed peer time to get some packets, so that it can send them to the leech
+    time::sleep(Duration::from_millis(25)).await;
+
     // Leech //
     let (_leech_wx, leech_rx) = oneshot::channel::<()>(); // writer unused but not dropped
-    let mut leech = Client::new(
+    let leech = Client::new(
         leech_addr,
         TorrentFile::new(".testfiles/received.png", torrent_size, packet_size).unwrap(),
     );
     let leech_handle = tokio::spawn(async move { leech.leech_loop(&server_addr, leech_rx).await });
 
     leech_handle.await??;
-
+    f_peer_leech_handle.await??;
+    
     tracker_wx.send(()).unwrap();
     seed_wx.send(()).unwrap();
     seed2_wx.send(()).unwrap();
-
+    fseed_wx.send(()).unwrap();
+    
+    f_peer_seed_handle.await??;
     seed_handle.await??;
     seed2_handle.await??;
     server_handle.await??;

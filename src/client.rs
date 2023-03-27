@@ -20,6 +20,7 @@ impl Client {
             torrent_file,
         }
     }
+
     pub async fn request_peerlist(&self, tracker_addr: &SocketAddr) -> io::Result<Vec<SocketAddr>> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
@@ -120,37 +121,6 @@ impl Client {
 
     /// Actual `leech_loop` body
     async fn do_leech_loop(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
-        let peerlist = {
-            let mut peerlist = vec![];
-            while peerlist.is_empty() {
-                time::sleep(Duration::from_millis(50)).await;
-                peerlist = self.request_peerlist(tracker_addr).await?;
-            }
-            peerlist
-        };
-
-        let peer_count = peerlist.len();
-        let mut seed = peer_count;
-
-        // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
-        // Code taken `https://github.com/rust-lang/rust/blob/6a179026decb823e6ad8ba1c81729528bc5d695f/library/core/src/slice/sort.rs#L677`
-        let mut gen_usize = || {
-            if usize::BITS <= 32 {
-                let mut r = seed as u32;
-                r ^= r << 13;
-                r ^= r >> 17;
-                r ^= r << 5;
-                seed = r as usize;
-                seed
-            } else {
-                let mut r = seed as u64;
-                r ^= r << 13;
-                r ^= r >> 7;
-                r ^= r << 17;
-                seed = r as usize;
-                seed
-            }
-        };
         let mut buf = vec![0u8; self.torrent_file.packet_size()];
         for (i, is_available) in self
             .torrent_file
@@ -163,26 +133,7 @@ impl Client {
                 continue;
             }
 
-            let mut stream: TcpStream = loop {
-                let peer_addr = peerlist[gen_usize() % peer_count];
-                let mut stream = TcpStream::connect(peer_addr).await?;
-
-                let seed_response = {
-                    let mut availability_buf = vec![0u8; 256];
-                    stream
-                        .write_all(&serde_json::to_vec(&LeechRequest::GetAvailability)?)
-                        .await?;
-                    let bytes_read = stream.read(&mut availability_buf).await?;
-                    serde_json::from_slice::<SeedResponse>(&availability_buf[..bytes_read])
-                }?;
-
-                if let SeedResponse::Availability(availability) = seed_response {
-                    match availability.get(i) {
-                        Some { 0: true } => break stream,
-                        _ => continue,
-                    }
-                }
-            };
+            let mut stream = self.peer_stream_with_packet(i, tracker_addr).await?;
 
             stream
                 .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(i, 1))?)
@@ -201,5 +152,64 @@ impl Client {
                 .await?;
         }
         Ok(())
+    }
+
+    async fn peer_stream_with_packet(
+        &self,
+        packet: usize,
+        tracker_addr: &SocketAddr,
+    ) -> io::Result<TcpStream> {
+        let peerlist = {
+            let mut peerlist = vec![];
+            while peerlist.is_empty() {
+                time::sleep(Duration::from_millis(50)).await;
+                peerlist = self.request_peerlist(tracker_addr).await?;
+            }
+            peerlist
+        };
+
+        let peer_count = peerlist.len();
+        let mut seed = peer_count * packet;
+
+        // Code taken from `https://github.com/rust-lang/rust/blob/6a179026decb823e6ad8ba1c81729528bc5d695f/library/core/src/slice/sort.rs#L677`
+        // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
+        let mut gen_usize = || {
+            if usize::BITS <= 32 {
+                let mut r = seed as u32;
+                r ^= r << 13;
+                r ^= r >> 17;
+                r ^= r << 5;
+                seed = r as usize;
+                seed
+            } else {
+                let mut r = seed as u64;
+                r ^= r << 13;
+                r ^= r >> 7;
+                r ^= r << 17;
+                seed = r as usize;
+                seed
+            }
+        };
+
+        loop {
+            let peer_addr = peerlist[gen_usize() % peer_count];
+            let mut stream = TcpStream::connect(peer_addr).await?;
+
+            let seed_response = {
+                let mut availability_buf = vec![0u8; 256];
+                stream
+                    .write_all(&serde_json::to_vec(&LeechRequest::GetAvailability)?)
+                    .await?;
+                let bytes_read = stream.read(&mut availability_buf).await?;
+                serde_json::from_slice::<SeedResponse>(&availability_buf[..bytes_read])
+            }?;
+
+            if let SeedResponse::Availability(availability) = seed_response {
+                match availability.get(packet) {
+                    Some { 0: true } => break Ok(stream),
+                    _ => continue,
+                }
+            }
+        }
     }
 }

@@ -122,17 +122,13 @@ impl Client {
     /// Actual `leech_loop` body
     async fn do_leech_loop(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let mut buf = vec![0u8; self.torrent_file.packet_size()];
-        for (i, is_available) in self
-            .torrent_file
-            .read_packet_availability()
-            .await
+        let packet_availability = self.torrent_file.read_packet_availability().await;
+
+        for (i, _) in packet_availability
             .iter()
             .enumerate()
+            .filter(|(_, available)| !available)
         {
-            if is_available {
-                continue;
-            }
-
             let mut stream = self.peer_stream_with_packet(i, tracker_addr).await?;
 
             stream
@@ -141,7 +137,7 @@ impl Client {
 
             let bytes_read = stream.read(&mut buf).await?;
             println!(
-                "[{}]: Got {} bytes from {}",
+                "[{}]: Packet {i} - got {} bytes from {}",
                 self.address,
                 bytes_read,
                 stream.peer_addr()?

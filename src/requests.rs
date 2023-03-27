@@ -12,7 +12,7 @@ pub enum RequestToTracker {
 pub enum TrackerResponse {
     Peers(Vec<SocketAddr>),
     InvalidRequest,
-    Ok,
+    RegisteredSuccesfully,
 }
 
 #[derive(Serialize, Deserialize)]

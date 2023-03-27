@@ -51,7 +51,7 @@ impl Server {
                         }
                         Ok(RequestToTracker::RegisterAsPeer(client_addr)) => {
                             self.peerlist.push(client_addr);
-                            TrackerResponse::Ok
+                            TrackerResponse::RegisteredSuccesfully
                         }
 
                         _ => TrackerResponse::InvalidRequest,

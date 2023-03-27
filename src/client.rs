@@ -86,7 +86,7 @@ impl Client {
                     Ok(LeechRequest::GetAvailability) => {
                         buffered_stream
                             .write_all(&serde_json::to_vec(&SeedResponse::Availability(
-                                self.torrent_file.packet_availability().await,
+                                self.torrent_file.read_packet_availability().await,
                             ))?)
                             .await?;
                     }
@@ -124,7 +124,7 @@ impl Client {
         let mut buf = vec![0u8; self.torrent_file.packet_size()];
         for (i, is_available) in self
             .torrent_file
-            .packet_availability()
+            .read_packet_availability()
             .await
             .iter()
             .enumerate()

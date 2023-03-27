@@ -140,7 +140,7 @@ impl TorrentFile {
         self.packet_count
     }
 
-    pub async fn packet_availability(&self) -> BitVec {
+    pub async fn read_packet_availability(&self) -> BitVec {
         self.packet_availability.read().await.clone()
     }
 
@@ -334,7 +334,7 @@ mod tests {
         let filename = ".testfiles/test_file";
         let handler = TorrentFile::new(filename, 10, 4).unwrap();
         assert_eq!(handler.packet_count, 3);
-        assert_eq!(handler.packet_availability().await.len(), 3);
+        assert_eq!(handler.read_packet_availability().await.len(), 3);
     }
 
     #[tokio::test]
@@ -404,12 +404,12 @@ mod tests {
         let handler = TorrentFile::new(filename, 8, 1).unwrap();
 
         let mut vec = BitVec::from_bytes(&[0]);
-        assert_eq!(handler.packet_availability().await, vec);
+        assert_eq!(handler.read_packet_availability().await, vec);
 
         handler.write_packets(0, "AA".as_bytes()).await.unwrap();
         vec.set(0, true);
         vec.set(1, true);
-        assert_eq!(handler.packet_availability().await, vec);
+        assert_eq!(handler.read_packet_availability().await, vec);
     }
 
     #[tokio::test]

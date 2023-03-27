@@ -154,9 +154,10 @@ impl Client {
         Ok(())
     }
 
+    /// Loops until it finds a peer with `packet_index` packet available and returns a TcpStream to that peer
     async fn peer_stream_with_packet(
         &self,
-        packet: usize,
+        packet_index: usize,
         tracker_addr: &SocketAddr,
     ) -> io::Result<TcpStream> {
         let peerlist = {
@@ -169,7 +170,7 @@ impl Client {
         };
 
         let peer_count = peerlist.len();
-        let mut seed = peer_count * packet;
+        let mut seed = peer_count * packet_index;
 
         // Code taken from `https://github.com/rust-lang/rust/blob/6a179026decb823e6ad8ba1c81729528bc5d695f/library/core/src/slice/sort.rs#L677`
         // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
@@ -205,7 +206,7 @@ impl Client {
             }?;
 
             if let SeedResponse::Availability(availability) = seed_response {
-                match availability.get(packet) {
+                match availability.get(packet_index) {
                     Some { 0: true } => break Ok(stream),
                     _ => continue,
                 }

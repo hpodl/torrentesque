@@ -203,7 +203,7 @@ impl Client {
 
             if let SeedResponse::Availability(availability) = seed_response {
                 match availability.get(packet_index) {
-                    Some { 0: true } => break Ok(stream),
+                    Some { 0: true } => break Ok(stream), // is Some(true) - peer has the packet
                     _ => continue,
                 }
             }

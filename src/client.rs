@@ -45,6 +45,7 @@ impl Client {
         }
     }
 
+    /// Registers as a peer at `tracker_addr` tracker
     pub async fn register_as_peer(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
@@ -135,6 +136,7 @@ impl Client {
                 .write_all(&serde_json::to_vec(&LeechRequest::GetPackets(i, 1))?)
                 .await?;
 
+            // Packets are read raw (instead of having their own serializable enum entry) to save bandwidth
             let bytes_read = stream.read(&mut buf).await?;
             println!(
                 "[{}]: Packet {i} - got {} bytes from {}",

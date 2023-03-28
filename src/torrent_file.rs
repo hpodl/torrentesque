@@ -213,8 +213,18 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             seq.next_element()?
                 .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?,
         );
+
+
+        let file = StdFile::options()
+            .write(true)
+            .read(true)
+            .create(false)
+            .truncate(false)
+            .open(&path)
+            .unwrap();
+
         Ok(TorrentFile {
-            file: StdFile::open(&path).unwrap(),
+            file,
             path,
             torrent_size,
             packet_size,
@@ -282,7 +292,7 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             .ok_or_else(|| serde::de::Error::missing_field("packet_availability"))?;
 
         let file = StdFile::options()
-            .append(true)
+            .write(true)
             .read(true)
             .create(false)
             .truncate(false)

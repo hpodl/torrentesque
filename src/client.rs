@@ -24,7 +24,7 @@ impl Client {
     pub async fn request_peerlist(&self, tracker_addr: &SocketAddr) -> io::Result<Vec<SocketAddr>> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
-            .write_all(&serde_json::to_vec(&RequestToTracker::GetPeers).unwrap())
+            .write_all(&serde_json::to_vec(&RequestToTracker::GetPeers)?)
             .await?;
         stream.write_all("\n".as_bytes()).await?;
         stream.flush().await?;
@@ -50,7 +50,7 @@ impl Client {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
             .write_all(
-                &serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address)).unwrap(),
+                &serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address))?,
             )
             .await?;
         stream.write_all("\n".as_bytes()).await?;
@@ -97,7 +97,7 @@ impl Client {
                     }
                     _ => {
                         buffered_stream
-                            .write_all(&serde_json::to_vec(&SeedResponse::InvalidRequest).unwrap())
+                            .write_all(&serde_json::to_vec(&SeedResponse::InvalidRequest)?)
                             .await?;
                     }
                 };

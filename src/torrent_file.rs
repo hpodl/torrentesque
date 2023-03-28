@@ -5,7 +5,7 @@ use std::str;
 
 use bit_vec::BitVec;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
-use tokio::fs::{read_to_string, File, OpenOptions};
+use tokio::fs::{read, File, OpenOptions};
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::RwLock;
 
@@ -60,32 +60,34 @@ impl TorrentFile {
         })
     }
 
-    pub async fn save_progress(&self) -> io::Result<()> {
+    /// Saves torrent metadata and download progress to a file named `[torrent_name].progress`
+    pub async fn save_progress_to_file(&self) -> io::Result<()> {
         let mut file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
-            .open(format!("{}.prog", self.path))
+            .open(format!("{}.progress", self.path))
             .await?;
 
-        file.write_all(
-            serde_json::to_string(&self)
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?
-                .as_bytes(),
-        )
-        .await
+        file.write_all(&serde_json::to_vec(&self)?).await
     }
 
+    /// Creates the struct based on metadata saved to a progress file
     pub async fn from_progress_file(path: &str) -> io::Result<Self> {
-        let file_content = read_to_string(path).await?;
-        serde_json::from_str(&file_content)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+        let file_content = read(path).await?;
+
+        // If returned directly, it'll have serde_json::Result type, which is incompatible with return type
+        let deserialized = serde_json::from_slice(&file_content)?;
+        Ok(deserialized)
     }
 
+    /// Creates the struct assuming the file pointed to by `path` is correct and downloaded wholly
+    ///
+    /// `from_progress_file` should be preferred over this one
     pub fn from_complete(path: &str, packet_size: usize) -> io::Result<Self> {
         let mut file = StdFile::options().read(true).append(true).open(path)?;
         file.rewind()?;
-        let torrent_size = file.metadata().unwrap().len() as usize;
+        let torrent_size = file.metadata()?.len() as usize;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);
         let mut packet_availability = BitVec::new();
@@ -100,6 +102,18 @@ impl TorrentFile {
             packet_availability,
             file,
         })
+    }
+
+    pub fn packet_count(&self) -> usize {
+        self.packet_count
+    }
+
+    pub async fn read_packet_availability(&self) -> BitVec {
+        self.packet_availability.read().await.clone()
+    }
+
+    pub fn packet_size(&self) -> usize {
+        self.packet_size
     }
 
     pub async fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
@@ -134,18 +148,6 @@ impl TorrentFile {
 
         file_handler.flush().await?;
         Ok(())
-    }
-
-    pub fn packet_count(&self) -> usize {
-        self.packet_count
-    }
-
-    pub async fn read_packet_availability(&self) -> BitVec {
-        self.packet_availability.read().await.clone()
-    }
-
-    pub fn packet_size(&self) -> usize {
-        self.packet_size
     }
 }
 

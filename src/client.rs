@@ -49,9 +49,9 @@ impl Client {
     pub async fn register_as_peer(&self, tracker_addr: &SocketAddr) -> io::Result<()> {
         let mut stream = TcpStream::connect(tracker_addr).await?;
         stream
-            .write_all(
-                &serde_json::to_vec(&RequestToTracker::RegisterAsPeer(self.address))?,
-            )
+            .write_all(&serde_json::to_vec(&RequestToTracker::RegisterAsPeer(
+                self.address,
+            ))?)
             .await?;
         stream.write_all("\n".as_bytes()).await?;
         stream.flush().await?;
@@ -115,8 +115,8 @@ impl Client {
         shutdown_channel: oneshot::Receiver<()>,
     ) -> io::Result<()> {
         tokio::select! {
-            res = shutdown_channel => {res.unwrap(); Ok(())},
-            res = self.do_leech_loop(tracker_addr) => {res},
+            _ = shutdown_channel => { self.save_progress().await },
+            res = self.do_leech_loop(tracker_addr) => { res },
         }
     }
 
@@ -150,6 +150,10 @@ impl Client {
                 .await?;
         }
         Ok(())
+    }
+
+    pub async fn save_progress(&self) -> io::Result<()> {
+        self.torrent_file.save_progress_to_file().await
     }
 
     /// Loops until it finds a peer with `packet_index` packet available and returns a TcpStream to that peer

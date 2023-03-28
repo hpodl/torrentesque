@@ -195,7 +195,7 @@ impl Client {
             let mut stream = TcpStream::connect(peer_addr).await?;
 
             let seed_response = {
-                let mut availability_buf = vec![0u8; self.torrent_file.packet_size()/8];
+                let mut availability_buf = vec![0u8; self.torrent_file.packet_size() / 8];
                 stream
                     .write_all(&serde_json::to_vec(&LeechRequest::GetAvailability)?)
                     .await?;

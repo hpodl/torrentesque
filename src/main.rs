@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use client::Client;
-use server::Server;
+use tracker::Tracker;
 use tokio::fs::OpenOptions;
 use tokio::sync::oneshot;
 use tokio::time::{self, sleep};
@@ -12,7 +12,7 @@ use torrent_file::TorrentFile;
 
 mod client;
 mod requests;
-mod server;
+mod tracker;
 mod torrent_file;
 
 #[tokio::main]
@@ -33,7 +33,7 @@ async fn main() -> std::io::Result<()> {
     let full_peer_addr = SocketAddr::from_str("127.0.0.167:5555").unwrap();
 
     let (tracker_wx, tracker_rx) = oneshot::channel::<()>();
-    let mut server = Server::new();
+    let mut server = Tracker::new();
     let server_handle = tokio::spawn(async move { server.listen(&server_addr, tracker_rx).await });
 
     // Otherwise might not bind before the client attempts connecting to the server

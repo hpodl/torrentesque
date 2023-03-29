@@ -10,11 +10,11 @@ use tokio::sync::oneshot;
 
 use crate::requests::{RequestToTracker, TrackerResponse};
 
-pub struct Server {
+pub struct Tracker {
     peerlist: Vec<SocketAddr>,
 }
 
-impl Server {
+impl Tracker {
     pub fn new() -> Self {
         Self { peerlist: vec![] }
     }

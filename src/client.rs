@@ -163,7 +163,8 @@ impl Client {
         tracker_addr: &SocketAddr,
     ) -> io::Result<TcpStream> {
         let peerlist = {
-            let mut peerlist = vec![];
+            let mut peerlist = self.request_peerlist(tracker_addr).await?;
+
             while peerlist.is_empty() {
                 time::sleep(Duration::from_millis(50)).await;
                 peerlist = self.request_peerlist(tracker_addr).await?;

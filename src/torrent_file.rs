@@ -1,5 +1,4 @@
 use std::cmp::min;
-use std::io::Seek;
 use std::ops::Deref;
 use std::str;
 
@@ -85,8 +84,7 @@ impl TorrentFile {
     ///
     /// `from_progress_file` should be preferred over this one
     pub fn from_complete(path: &str, packet_size: usize) -> io::Result<Self> {
-        let mut file = StdFile::options().read(true).append(true).open(path)?;
-        file.rewind()?;
+        let file = StdFile::options().read(true).truncate(false).open(path)?;
         let torrent_size = file.metadata()?.len() as usize;
 
         let packet_count = div_usize_ceil(torrent_size, packet_size);

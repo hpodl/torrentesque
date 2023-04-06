@@ -17,7 +17,7 @@ pub struct TorrentFile {
     packet_size: usize,
     packet_count: usize,
     packet_availability: RwLock<BitVec>,
-    file: StdFile,
+    file: RwLock<File>,
 }
 
 /// Returns ceil(a/b)
@@ -34,12 +34,16 @@ fn div_usize_ceil(a: usize, b: usize) -> usize {
 
 impl TorrentFile {
     pub fn new(path: &str, torrent_size: usize, packet_size: usize) -> io::Result<Self> {
-        let file = StdFile::options()
+        // std::fs::File
+        let file: StdFile = StdFile::options()
             .write(true)
             .read(true)
             .create(true)
             .truncate(true)
             .open(path)?;
+
+        // tokio::fs::File
+        let file = RwLock::new(File::from_std(file));
 
         // currently stable Rust offers no straightforward integer ceil division
         let packet_count = div_usize_ceil(torrent_size, packet_size);
@@ -92,6 +96,7 @@ impl TorrentFile {
         packet_availability.grow(packet_count, true);
         let packet_availability = RwLock::new(packet_availability);
 
+        let file = RwLock::new(File::from_std(file));
         Ok(Self {
             path: path.to_owned(),
             torrent_size,
@@ -122,7 +127,8 @@ impl TorrentFile {
         );
         let mut buf = vec![0u8; bytes_to_read];
 
-        let mut reader = File::from_std(self.file.try_clone()?);
+        // For now, has to be a mutable `RwLockWriteGuard` as it actually modifies internal cursor
+        let mut reader = self.file.write().await;
         reader
             .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
             .await?;
@@ -132,19 +138,19 @@ impl TorrentFile {
     }
 
     pub async fn write_packets(&self, start: usize, data: &[u8]) -> io::Result<()> {
-        let mut file_handler = File::from_std(self.file.try_clone()?);
-        file_handler
+        let mut writer = self.file.write().await;
+        writer
             .seek(io::SeekFrom::Start((start * self.packet_size) as u64))
             .await?;
-        file_handler.write_all(data).await?;
-        file_handler.flush().await?;
+        writer.write_all(data).await?;
+        writer.flush().await?;
 
         let mut availability_lock = self.packet_availability.write().await;
         for i in start..(start + div_usize_ceil(data.len(), self.packet_size)) {
             availability_lock.set(i, true);
         }
 
-        file_handler.flush().await?;
+        writer.flush().await?;
         Ok(())
     }
 }
@@ -212,7 +218,6 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
                 .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?,
         );
 
-
         let file = StdFile::options()
             .write(true)
             .read(true)
@@ -220,6 +225,8 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             .truncate(false)
             .open(&path)
             .unwrap();
+
+        let file = RwLock::new(File::from_std(file));
 
         Ok(TorrentFile {
             file,
@@ -296,6 +303,8 @@ impl<'de> serde::de::Visitor<'de> for FileHandlerVisitor {
             .truncate(false)
             .open(&path)
             .unwrap();
+
+        let file = RwLock::new(File::from_std(file));
 
         Ok(TorrentFile {
             file,

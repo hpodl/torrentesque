@@ -111,6 +111,7 @@ impl TorrentFile {
         self.packet_count
     }
 
+    /// Acquires internal RwLock and returns BitVec representing which packets are available and which are not
     pub async fn read_packet_availability(&self) -> BitVec {
         self.packet_availability.read().await.clone()
     }
@@ -119,6 +120,7 @@ impl TorrentFile {
         self.packet_size
     }
 
+    /// Reads packets [start; start + count] from a file
     pub async fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
         // Makes the buffer smaller when the last packet is of size < `self.packet_size`
         let bytes_to_read = min(

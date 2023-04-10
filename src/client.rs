@@ -75,17 +75,15 @@ impl Client {
         let listener = TcpListener::bind(self.address).await?;
         let mut packet_buffer = [0u8; 1024];
 
-        while let Ok((stream, _)) = listener.accept().await {
-            let mut buffered_stream = BufStream::new(stream);
-
-            while let Ok(bytes_read) = buffered_stream.read(&mut packet_buffer).await {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            while let Ok(bytes_read) = stream.read(&mut packet_buffer).await {
                 if bytes_read == 0 {
                     break;
                 }
 
                 match serde_json::from_slice::<LeechRequest>(&packet_buffer[..bytes_read]) {
                     Ok(LeechRequest::GetAvailability) => {
-                        buffered_stream
+                        stream
                             .write_all(&serde_json::to_vec(&SeedResponse::Availability(
                                 self.torrent_file.read_packet_availability().await,
                             ))?)
@@ -93,16 +91,16 @@ impl Client {
                     }
                     Ok(LeechRequest::GetPackets(start, count)) => {
                         let data = self.torrent_file.get_packets(start, count).await?;
-                        buffered_stream.write_all(&data).await?;
+                        stream.write_all(&data).await?;
                     }
                     _ => {
-                        buffered_stream
+                        stream
                             .write_all(&serde_json::to_vec(&SeedResponse::InvalidRequest)?)
                             .await?;
                     }
                 };
 
-                buffered_stream.flush().await?;
+                stream.flush().await?;
             }
         }
         Ok(())

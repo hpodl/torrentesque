@@ -121,7 +121,7 @@ impl TorrentFile {
     }
 
     /// Reads packets [start; start + count] from a file
-    pub async fn get_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
+    pub async fn read_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
         // Makes the buffer smaller when the last packet is of size < `self.packet_size`
         let bytes_to_read = min(
             count * self.packet_size,
@@ -370,7 +370,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            handler.get_packets(0, 2).await.unwrap(),
+            handler.read_packets(0, 2).await.unwrap(),
             "ABCDabcd".as_bytes()
         )
     }
@@ -410,7 +410,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            handler.get_packets(0, 2).await.unwrap(),
+            handler.read_packets(0, 2).await.unwrap(),
             "ABCDabcd".as_bytes()
         );
 
@@ -444,6 +444,6 @@ mod tests {
         println!("\n{:#?}\n", serialized);
         let deserialized: TorrentFile = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(deserialized.get_packets(0, 8).await.unwrap(), content)
+        assert_eq!(deserialized.read_packets(0, 8).await.unwrap(), content)
     }
 }

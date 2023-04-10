@@ -90,7 +90,7 @@ impl Client {
                             .await?;
                     }
                     Ok(LeechRequest::GetPackets(start, count)) => {
-                        let data = self.torrent_file.get_packets(start, count).await?;
+                        let data = self.torrent_file.read_packets(start, count).await?;
                         stream.write_all(&data).await?;
                     }
                     _ => {

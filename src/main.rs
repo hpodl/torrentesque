@@ -17,7 +17,7 @@ mod torrent_file;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let packet_size = 4096;
+    let packet_size = 1024;
     let torrent_size = {
         let complete_torrent_file = OpenOptions::new()
             .read(true)

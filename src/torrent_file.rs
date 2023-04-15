@@ -122,6 +122,29 @@ impl TorrentFile {
 
     /// Reads packets [start; start + count] from a file
     pub async fn read_packets(&self, start: usize, count: usize) -> io::Result<Vec<u8>> {
+        if start + count > self.packet_count {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Packet out of bounds".to_owned(),
+            ));
+        }
+        let all_available = {
+            let packet_availability = self.packet_availability.read().await;
+
+            packet_availability
+                .iter()
+                .skip(start)
+                .take(count)
+                .all(|bit| bit == true)
+        };
+
+        if !all_available {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Not all requested packets are available.".to_owned(),
+            ));
+        }
+
         // Makes the buffer smaller when the last packet is of size < `self.packet_size`
         let bytes_to_read = min(
             count * self.packet_size,
@@ -413,6 +436,42 @@ mod tests {
             handler.read_packets(0, 2).await.unwrap(),
             "ABCDabcd".as_bytes()
         );
+
+        let mut file = StdFile::open(filename).unwrap();
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf).unwrap();
+    }
+
+    #[tokio::test]
+    async fn FileHandler_read_packets_out_of_bounds() {
+        let filename = ".testfiles/FileHandler_write_packets_nondiv";
+        let packet_size = 4; // 4 bytes
+
+        let handler = TorrentFile::new(filename, 10, packet_size).unwrap();
+
+        handler
+            .write_packets(0, "ABCDabcd".as_bytes())
+            .await
+            .unwrap();
+        assert!(handler.read_packets(0, 256).await.is_err(),);
+
+        let mut file = StdFile::open(filename).unwrap();
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf).unwrap();
+    }
+
+    #[tokio::test]
+    async fn FileHandler_read_packets_unavailable() {
+        let filename = ".testfiles/FileHandler_write_packets_nondiv";
+        let packet_size = 4; // 4 bytes
+
+        let handler = TorrentFile::new(filename, 10, packet_size).unwrap();
+
+        handler
+            .write_packets(0, "ABCDabcd".as_bytes())
+            .await
+            .unwrap();
+        assert!(handler.read_packets(3, 4).await.is_err(),);
 
         let mut file = StdFile::open(filename).unwrap();
         let mut buf = [0u8; 8];
